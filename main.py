@@ -3,7 +3,6 @@ from google.cloud import bigquery
 from google.cloud import discoveryengine_v1beta
 import vertexai
 from vertexai.preview.generative_models import GenerativeModel
-
 import os
 
 app = Flask(__name__)
@@ -17,7 +16,6 @@ TABLE_DEFINITIONS = "dm_definitions"
 TABLE_ALIASES = "dm_value_aliasses"
 SEARCH_APP_ID = "profil_search"
 
-# Inisialisasi Vertex AI
 def init_vertex():
     vertexai.init(project=PROJECT_ID, location=LOCATION)
 
@@ -138,6 +136,7 @@ def run_query(sql):
     return [dict(row) for row in results]
 
 def generate_answer_with_gemini(question, rows):
+    init_vertex()
     prompt = f"""
 Kamu adalah asisten yang menjawab pertanyaan pengguna berdasarkan hasil query database.
 
@@ -154,6 +153,7 @@ Buat jawaban yang ramah dan mudah dimengerti untuk ditampilkan ke pengguna.
 
 # === Unstructured Data (Vertex AI Search App) ===
 def handle_vertex_search(question):
+    init_vertex()
     client = discoveryengine_v1beta.SearchServiceClient()
     serving_config = (
         f"projects/{PROJECT_ID}/locations/{LOCATION}/collections/default_collection/"
@@ -188,6 +188,7 @@ Jawaban:
     response = model.generate_content(prompt)
     return response.text.strip()
 
+# === Endpoint Utama ===
 @app.route("/", methods=["POST"])
 def webhook():
     body = request.get_json()
@@ -198,7 +199,7 @@ def webhook():
     try:
         question = body.get("text") or body.get("fulfillmentInfo", {}).get("tag", "")
         parameters = body.get("sessionInfo", {}).get("parameters", {})
-        mode = parameters.get("mode", "sql")  # default ke SQL jika tidak ditentukan
+        mode = parameters.get("mode", "sql")
     except:
         question = "Tampilkan semua data"
         parameters = {}
@@ -233,7 +234,13 @@ def webhook():
         }
     })
 
-# Jalankan
+# === Health Check Endpoint untuk Cloud Run ===
+@app.route("/", methods=["GET"])
+def index():
+    return "Webhook is alive", 200
+
+# === Jalankan Flask App ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
+    print(f"Starting app on port {port}...")
     app.run(host="0.0.0.0", port=port)
